@@ -1,0 +1,525 @@
+---
+title: "Analiza rozwoju rynku pojazdów elektrycznych w stanie Waszyngton"
+author: "Igor Kozak"
+format:
+  html:
+    toc: true
+    toc-title: "Spis treści"
+    toc-location: right
+    toc-depth: 4
+    css: styles.css
+---
+
+::: {#sticky-logo}
+<img src="us.jpg" alt="Logo USA"/>
+
+<img src="loga.png" alt="Drugie logo" class="sublogo"/>
+:::
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+##Spis bibliotek 
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(kableExtra)
+library(lmtest)
+library(olsrr)
+library(nortest)
+library(broom)
+library(ggfortify)
+library(sandwich)
+library(packcircles)
+library(viridis)
+library(ggiraph)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(randomForest)
+library(pROC)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+dane <- read.csv("C://Users//igork//Desktop//V_SEMESTR//projekt_analiza//dane_uzupelnione.csv")
+#dane
+```
+
+## Wprowadzenie
+
+Celem niniejszego projektu jest przeprowadzenie kompleksowej analizy rozwoju populacji pojazdów elektrycznych (EV) w stanie Waszyngton (USA). S͏kupiamy się ͏na ty͏m jak zmien͏ia się͏ licz͏ba zar͏eje͏stro͏wanych aut w czasie ͏oraz na znajdowaniu czynników technicznych i przestrzennych, które wpływają na͏ rynek. Ciek͏awi nas np. jak szybko͏ rośnie przyjęcie EV,͏ jak r͏ozk͏ładają się udz͏iały BEV a także PHE͏V, które marki a modele są najczęstsze i gdzie reje͏stracje są największe.
+
+W ͏ostatnich ͏dziesięciu latach rynek elek͏trycznyc͏h samochodów ͏w USA rozwija się͏ szybko a stan W͏a͏szyngton jest j͏ednym z liderów w używaniu tej tec͏hnologi͏i. Wzrost liczby aut z napędem na prąd ͏pokaz͏uje połącze͏nie kilku tre͏ndów: postępu w techno͏logi͏ach baterii ͏(dłuższe zasięgi, ni͏ższe ceny͏), budowy ładowarek oraz większej świadomości o środowisku. Jednocześ͏nie pojawiają się͏ duże różnice przes͏trzenne - między hrabstw͏ami i mia͏s͏t͏ami - które wynikają z dochodów ludzi, gęstości ludności dostępności ładowarek czy lokalnych p͏olityków transportowych͏.
+
+W analizie wykorzystujemy oficjalne, publicznie dostępne dane rejestracyjne Departamentu Licencjonowania Stanu Waszyngton. Zbiór zawiera m.in. rok modelowy, markę i model pojazdu, typ napędu (BEV/PHEV), a także lokalizację administracyjną (miasto, hrabstwo) i identyfikator jednostki spisowej. Dane poddano wstępnemu przygotowaniu: standaryzacji nazw pól, usunięciu braków krytycznych oraz normalizacji kategorii (np. oczyszczenie nazw typów pojazdów).
+
+### Słowniczek:
+
+-   EV - pojazd elektryczny - ogólna kategoria
+
+-   BEV - pojazd w pełni elektryczny
+
+-   PHEV - hybryda plug-in (pojazd posiadajacy zarówno akumulator jak i silnik spalinowy)
+
+## Trendy w czasie
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+trend <- dane %>%
+  filter(rok_modelowy >= 2010) %>%  
+  group_by(rok_modelowy, typ_pojazdu_elektrycznego) %>%
+  summarise(liczba = n(), .groups = "drop")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(trend,
+       aes(x = rok_modelowy, y = liczba, fill = typ_pojazdu_elektrycznego)) +
+  geom_col(position = "dodge") +
+  labs(x = "Rok modelowy",
+       y = "Liczba pojazdów",
+       fill = "Typ pojazdu",
+       title = "Liczba pojazdów BEV i PHEV wg roku modelowego") +
+  theme_minimal()
+```
+
+Na wykresie słupkowym widać dynamiczny wzrost liczby pojazdów elektrycznych w stanie Waszyngton po 2015 roku, z wyraźnym przyspieszeniem po 2019 r. W każdym roczniku liczbowo dominują pojazdy BEV, a różnica między BEV i PHEV szczególnie rośnie dla najnowszych modeli (po 2020 r.), co pokazuje przesuwanie się rynku w stronę aut w pełni elektrycznych.
+
+### Udział BEV vs PHEV w czasie
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+trend2 <- trend %>%
+  group_by(rok_modelowy) %>%
+  mutate(udzial = liczba / sum(liczba)) %>%
+  ungroup()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(trend2,
+       aes(x = rok_modelowy, y = udzial, color = typ_pojazdu_elektrycznego)) +
+  geom_line(linewidth = 1) +
+  geom_point() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(x = "Rok modelowy",
+       y = "Udział w danym roczniku",
+       color = "Typ pojazdu",
+       title = "Udział BEV i PHEV wśród pojazdów elektrycznych wg roku modelowego") + theme_minimal()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+tabela_udzialy <- trend2 %>%
+  select(rok_modelowy, typ_pojazdu_elektrycznego, udzial) %>%
+  pivot_wider(
+    names_from = typ_pojazdu_elektrycznego,
+    values_from = udzial
+  ) %>%
+  rename(
+    BEV = `Battery Electric Vehicle`,
+    PHEV = `Plug-in Hybrid Electric Vehicle`
+  ) %>%
+  arrange(rok_modelowy)
+
+tabela_udzialy |>
+  mutate(
+    BEV = scales::percent(BEV,  accuracy = 0.1),
+    PHEV = scales::percent(PHEV, accuracy = 0.1)
+  ) |>
+  kable(
+    caption = "Udział BEV i PHEV wśród pojazdów elektrycznych wg roku modelowego",
+    col.names = c("Rok modelowy", "Udział BEV", "Udział PHEV"),
+    align = "c"
+  ) |>
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+Wykres liniowy udziałów wraz z tabelą pokazują, że już od kilku lat BEV stanowią zdecydowaną większość wśród pojazdów elektrycznych w stanie Waszyngton – ich udział najczęściej przekracza 70–80%, podczas gdy udział PHEV stopniowo maleje.
+
+Jednakże w początkowym okesie (2010-2014) udział BEV był bardzo zmienny, a w 2012 i 2014 roku ustąpił miejsca PHEV. Ten okres odzwierciedla brak stabilności na rynku. Ale po 2014 roku udział BEV systematycznie dominuje ,a więc trend długoterminowy jest wyraźnie pozytywny.
+
+**Czy udział BEV rośnie w czasie?**
+
+Aby odpowiedzieć na to pytanie, zbudowaliśmy liniowy model regresji, w którym zmienna zależną jest udział BEV wśród wszystkich pojazdów elektrycznych w danym roku, a zmienną objaśniającą - rok. Zastosowaliśmy również wagi, które odpowiadaja liczbe rejestracji w danym roku. Takie podejście ogranicza problem heteroskedastyczności i prowadzi do bardziej wiarygodnej oceny trendu w czasie.
+
+Przyjmijmy poziom istotności dla wszystkich testów $\alpha=0.05$
+
+**Hipotezy:**
+
+$H_0: \beta_1 = 0 , \text{udział BEV nie zmienia sie w czasie}$
+
+$H_1: \beta_1 > 0, \text{udział BEV rośnie w czasie}$
+
+, gdzie $\beta_1$ - zmiana udziału BEV na 1 rok
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+wagi_rok <- trend2 %>% 
+  group_by(rok_modelowy) %>% 
+  summarise(n_total = sum(liczba),.groups = "drop")
+
+bev_share <- trend2 %>%
+  filter(typ_pojazdu_elektrycznego == "Battery Electric Vehicle") %>% 
+  select(rok_modelowy, udzial) %>%
+  arrange(rok_modelowy) %>%
+  left_join(wagi_rok, by = "rok_modelowy") %>%
+  mutate(rok = rok_modelowy - min(rok_modelowy))
+model_bev_wls <- lm(udzial ~ rok,data = bev_share, weights = n_total)      
+summary(model_bev_wls)
+```
+
+Budowa modelu:
+
+$$
+udział = 0.572 + 0.019*rok
+$$
+
+Z otrzymanego powyżej wydruku widać ,że oszacowana zmiana udziału BEV na 1 rok wynosi około 2 punkty procentowe rocznie. A otrzymane p-value = 0.005\< $\alpha$, co pozwala odrzucić hipotezę zerową na rzecz hipotezy alternatywnej. Oznacza to ,że udział pojazdów BEV w czasie rośnie w sposób istotnie statystyczny. Sprawdzimy teraz założenia naszego modelu.
+
+**Liniowość**
+
+Sprawdzimy to założenie wykonując następujące testy: Rainbow, Reset oraz Harveya-Colliera
+
+$H_0:$ model jest liniowy
+
+$H_1:$ model jest nieliniowy
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+rainbow <- raintest(model_bev_wls) 
+rainbow
+```
+
+$H_0:$ Model jest poprawnie określony
+
+$H_1:$ Model jest błędnie określony
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+reset <- resettest(model_bev_wls)
+reset
+```
+
+$H_0:$ Model jest liniowy
+
+$H_1:$ Model jest nieliniowy
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+harvey <- harvtest(model_bev_wls)
+harvey
+```
+
+Część testów (RESET, Harvey–Collier) wskazała na możliwe naruszenie liniowości, co sugeruje, że rzeczywista zależność między udziałem BEV a rokiem może być lekko nieliniowa. Ze względu na niewielką liczebność próby (n=17) przyjeliśy prosty model liniowy jako akceptowalne przybliżenie. Informację o możliwej nieliniowości traktujemy jako ograniczenie modelu. Jednocześnie współczynnik przy zmiennej "rok” pozostaje dodatni i istotny statystycznie, więc wniosek o rosnącym udziale BEV w czasie jest utrzymany.
+
+**Normalność reszt**
+
+Sprawdzimy to założenie testami Shapiro-Wilka, Andersona-Darlinga i Cramera von Miessa. W każdym z tych testów postawimy niżej przedstawione hipotezy.
+
+$H_0:$ błędy reszty maja rozkład normalny
+
+$H_1:$ błędy reszty nie maja rozkładu normalnego
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+res_shapiro <- shapiro.test(residuals(model_bev_wls))
+res_ad <- ad.test(residuals(model_bev_wls))
+res_c <- cvm.test(residuals(model_bev_wls))
+
+norm_table <- data.frame(
+  Test = c("Shapiro-Wilk", "Anderson-Darling", "Cramera von Miessa"),
+  Stat = c(unname(res_shapiro$statistic),
+              unname(res_ad$statistic),
+              unname(res_c$statistic)),
+  p_value = c(res_shapiro$p.value,
+              res_ad$p.value,
+              res_c$p.value))
+norm_table
+```
+
+We wszystkich przeprowadzonych przez nas testach p-values są większe od przyjętego pozistotności $\alpha$ , a więc nie mamy podstaw do odrzucenia hipotezy zerowej. Założenie o normalności reszt nie zostało naruszone.
+
+**Liniowa Niezależność**
+
+W analizowanym modelu występuje tylko jedna zmienna objaśniająca ("rok”), dlatego założenie liniowej niezależności predyktorów (braku współliniowości) jest spełnione w sposób oczywisty.
+
+**Egzogeniczność**
+
+Zakładamy ścisłą egzogeniczność składnika losowego, tj. ,że $E(\epsilon_i|rok_i)=0$ . Oznacza to ,że odchylenia udziału BEV od lini trendu wynikają z czynników losowych (np. wahań popytu), które nie są systematycznie powiązane ze zmienną rok.
+
+**Homoskedastyczność**
+
+W celu zbadania załeżenia homogeniczności modelu wykorzystamy test Brausha-Pagna oraz test White'a i postawimy następujące hipotezy:
+
+$H_ 0:$ homoskedastyczność
+
+$H_1:$ heterskedastyczność
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+bp <- bptest(model_bev_wls)
+
+white <- bptest(model_bev_wls,udzial ~ rok + I(udzial^2) + I(rok^2) + I(udzial * rok),data = bev_share)
+
+homo_table <- data.frame(Test = c("Breusch–Pagan", "White"),Stat = c(unname(bp$statistic),unname(white$statistic)),df = c(unname(bp$parameter),unname(white$parameter)),p_value = c(formatC(bp$p.value,format = "e", digits = 2),formatC(white$p.value, format = "e", digits = 2)))
+
+kable(homo_table,caption = "Wyniki testów na homoskedastyczność")
+```
+
+Wyniki przeprowadzonych testów zostały pokazane w tabelce i możemy zauważyć ,że nasze p-value jest znacznie mniejsze od przyjętego poziomu istotności, co za tym idzie odrzucamy hipotezy zerowe dla obydwu testów. A więc wariancja składnika losowego (błędów) nie jest stała w modelu. Sprawdzmy dodatkowo jak to założenie wygląda na wykresie zależności reszt od wartości dopasowanych.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+autoplot(model_bev_wls, which = 1)
+```
+
+Na wykresie Residuals vs Fitted widać ,że rozproszenie reszt nie jest stałe - dla niektórych zakresów wartości dopasowanych reszty są bardziej zróżnicowane niż dla innych. Jest to dodatkowy sygnał występowania heteroskedastyczności, zgodny z wynikami wyżej przeprowadzonych testów. Zatem założenie homogeniczności wariancji jest naruszone.
+
+Ze względu na stwierdzoną heteroskedastyczność, przy wnioskowaniu o istotności parametrów zastoswaliśmy odporny na heteroskedastyczność estymator White'a (HC1). Estymator HC1 zawiera poprawkę na małą próbę, dzięki czemu uzyskane błędy standardowe są mniej obciążone.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+est <- coeftest(model_bev_wls,vcov. = vcovHC(model_bev_wls, type = "HC1"))
+est
+```
+
+Po zastosowaniu tej korekty współczynnik przy zmiennej „rok” pozostaje dodatni i istotny statystycznie (t = 3.02; p = 0.0088), co potwierdza wniosek o rosnącym udziale pojazdów BEV w czasie.
+
+**Autokorelacja reszt**
+
+Do jej zbadania przeprowadźimy test Breusha-Godfreya i postawimy następujące hipotezy:
+
+$H_0:$ Brak autokorelacji
+
+$H_1:$ Wystepuje autokorelacja
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+bgtest(model_bev_wls, order = 4)
+```
+
+Otrzymane p-value jest znacznie większe od przyjetego poziomu istotności $\alpha=0.05$, nie mamy podstaw do odrzucenia hipotezy zerowej. Oznacza to ,że w zbudowanym modelu nie stwierdzono istotnej autokorelacji reszt.
+
+**Podsumowanie:**
+
+Przeprowadzona analiza pokazuje, że z roku na rok coraz większa część elektrycznego świat pojazdów w stanie Waszyngton stanowią auta w pełni elektryczne, a udział hybryd typu plug-in stopniowo maleje. Można to interpretować jako efekt dojrzewania rynku: kierowcy w Waszyngtonie częściej wybierają pojazdy zeroemisyjne, co jest spójne z proekologicznym wizerunkiem stanu i lokalną polityką wspierania elektromobilności. Z punktu widzenia dalszego rozwoju rynku wyniki te sugerują, że w kolejnych latach BEV będą odgrywać coraz ważniejszą rolę w transformacji transportu w stanie Waszyngton.
+
+## Liderzy rynku
+
+W tej części analizujemy, które konkretne modele pojazdów elektrycznych dominują na rynku stanu Waszyngton. Na poniższym wykresie przedstawiono trzydzieści najczęściej rejestrowanych modeli BEV i PHEV. Wielkość koła odzwierciedla liczbę rejestracji danego modelu, natomiast kolor rozróżnia pojazdy w pełni elektryczne (BEV) od hybryd typu plug-in (PHEV). Taka wizualizacja pozwala szybko ocenić, które modele i marki rzeczywiście „ciągną” rynek oraz jaką pozycję zajmują BEV względem PHEV w grupie najbardziej popularnych aut.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+dane_do_analizy <- dane %>%
+  filter(typ_pojazdu_elektrycznego %in% c("Battery Electric Vehicle", "Plug-in Hybrid Electric Vehicle"))
+top_modele_full <- dane_do_analizy %>%
+  mutate(marka_model = paste(marka, model, sep = " - ")) %>%
+  group_by(marka_model, typ_pojazdu_elektrycznego) %>%
+  summarise(Liczba_Rejestracji = n(), .groups = "drop") %>%
+  arrange(desc(Liczba_Rejestracji)) %>%
+  slice_head(n = 30) 
+
+data <- top_modele_full %>%
+  rename(group = marka_model, value = Liczba_Rejestracji) %>%
+  rename(type = typ_pojazdu_elektrycznego)
+
+data$text <- paste("Model: ", data$group, "\n", 
+                   "Typ: ", data$type, "\n", 
+                   "Rejestracje:", data$value)
+
+packing <- circleProgressiveLayout(data$value, sizetype='area')
+data <- cbind(data, packing)
+dat.gg <- circleLayoutVertices(packing, npoints=50)
+
+p <- ggplot() + 
+  geom_polygon_interactive(data = dat.gg, 
+                           aes(x, y, group = id, 
+                               fill = data$type[id], 
+                               tooltip = data$text[id], data_id = id), 
+                           colour = "black", alpha = 0.8) +
+  scale_fill_manual(
+      values = c(
+          "Battery Electric Vehicle" = "#1A759F", 
+          "Plug-in Hybrid Electric Vehicle" = "#D9534F" 
+      ), 
+      name = "Typ Pojazdu"
+  ) + geom_text(data = data, 
+            aes(x, y, 
+                label = gsub(" - ", "\n", group)), 
+            size=2.5, 
+            color="black", 
+            fontface="bold") +
+  theme_void() + 
+  theme(legend.position="bottom", 
+        plot.margin=unit(c(0.2, 0.2, 0.2, 0.2),"cm"), 
+        plot.title = element_text(hjust = 0.5, size = 16, face = "bold")) + 
+  coord_equal() +
+  labs(title = "TOP 30: Udział Rejestracji Modeli BEV i PHEV (Wielkość = Rejestracje)")
+w <- girafe(ggobj = p, width_svg = 11, height_svg = 11)
+w
+```
+
+-   **Silnia dominacja Tesli** - największe koła należą do modeli Tesla Y i Tesla 3, co pokazuje ,że to właśnie one są głownymi koniami pociągowymi rynku pojazdów elektrycznych w stanie Waszyngton. Wsród pozostałych modeli Tesli ( Model S czy Model X) też widać znaczący udział.
+
+-   **Przewaga pojazdów BEV nad PHEV** - pojazdy w pełni elektryczne stanowią znaczną większość na powyższej wizualizacji. Natomiast pojazdy typu PHEV pojawiają się głównie jako uzupełnienia i pełnia raczej role niszową wobec mody modeli BEV.
+
+-   **Zróżniocowana oferta marek** - poza Teslą w czołówce pojawiają się także modele takich prodeucentów jak Nissan, Ford czy Chevrolet. Świadczy to o tym ,że rynek nie jest monomarkowy - konsumenci mają realny wybór miedzy producentami.
+
+Powyższa analiza udziału marek w stanie Waszyngton wskazała znacząca dominacje Tesli. Sprawdzimy jednak czy hegomonia ta poparta jest udziałem tej branży motoryzacyjnej w każdym hrabstwie. W tym celu postawimy hipotezę badwczą.
+
+**Hipoteza:** Pomimo obecności innych producentów i pojazdów hybrydowych, Tesla jest dominująca marką pod względem rejestracji w zdecydowanej większości hrabstw stanu Waszyngton.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, include=FALSE }
+library(tigris)
+library(sf)
+options(tigris_progress = FALSE)
+stan_waszyngton_kod <- "WA" 
+mapa_hrabstw <- counties(state = stan_waszyngton_kod, 
+                         class = "sf",
+                         year = 2020)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+liderzy_marki_regionalni <- dane %>%
+filter(typ_pojazdu_elektrycznego %in% c("Battery Electric Vehicle","Plug-in Hybrid Electric Vehicle")) %>%
+group_by(hrabstwo, marka) %>%
+summarise(Liczba_Rejestracji = n(), .groups = "drop_last") %>%
+slice_max(Liczba_Rejestracji, n = 1, with_ties = FALSE) %>%
+ungroup() %>%
+rename(Dominujaca_Marka = marka)
+mapa_przygotowana <- mapa_hrabstw %>%
+mutate(hrabstwo_klucz = toupper(gsub(" County", "", NAME)))
+liderzy_przygotowani <- liderzy_marki_regionalni %>%
+mutate(hrabstwo_klucz = toupper(hrabstwo))
+mapa_finalna <- mapa_przygotowana %>%
+left_join(liderzy_przygotowani, by = "hrabstwo_klucz")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+wykres_mapa_marka <- ggplot(data = mapa_finalna) +
+  geom_sf(aes(fill = Dominujaca_Marka), color = "white", linewidth = 0.2) +
+  scale_fill_viridis_d(
+    name = "Dominująca Marka",
+    na.value = "grey80"
+  ) +
+  guides(
+    fill = guide_legend(
+      title.position = "top",
+      ncol = 1
+    )
+  ) +
+  labs(
+    title = "Dominująca Marka Pojazdu Elektrycznego według Hrabstwa (WA)",
+    subtitle = "Kolor odzwierciedla markę z największą liczbą rejestracji (BEV & PHEV)."
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_text(hjust = 0.5)
+  )
+print(wykres_mapa_marka)
+```
+
+Nasza hipoteza postawiona we wstępię została w dużej mierze potwierdzona. Mapa wyraźnie pokazuję ,że Tesla dominuje w przytłaczającej większości hrabstw stanu Waszyngton, co wskazuje na uniwersalną siłę rynkowa tej marki w regionie. Konkurencja ze strony innych producentów ma charakter niszowy i na ten moment nie zagraża ogólnej pozycji lidera w skali całego stanu.
+
+### Drzewo Decyzjne
+
+Dotychczasowa analiza liderów rynku w stanie Waszyngton wyraźnie wykazała silną i geograficznie rozproszoną dominacje marki Tesla. Obserwacje te rodzą naturalne pytanie: **jakie konkretnie cechy techniczne** pojazdów Tesli czynią ją tak wyjątkową, że jest w stanie zdominować rynek w niemal każdym hrabstwie, pomimo obecności zróżnicowanej oferty innych producentów.
+
+W celu ilościowego określenia cech wyróżniających lidera rynku, zastosujemy model klasyfikacji binarnej. Zbudujemy Drzewo Decyzyjne , które ma za zadanie przewidzieć, czy dany pojazd należy do klasy TESLA czy do klasy INNE MARKI, bazując na jego właściwościach użytkowych: zasięgu i roku modelowym.
+
+Analiza została ograniczona wyłącznie do pojazdów w pełni elektrycznych, elimując hybrydy plug-in ,aby zachować spójność merytoryczną z analizą zasięgu.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+dane_bev1 <- dane %>%
+  filter(typ_pojazdu_elektrycznego == "Battery Electric Vehicle") %>%
+  filter(zasieg_elektr_mile > 50) %>% 
+  dplyr::select(marka, zasieg_elektr_mile, rok_modelowy) %>%
+  na.omit()
+
+dane_klasyfikacja <- dane_bev1 %>%
+  mutate(marka_u = toupper(marka),
+    klasa = if_else(marka_u == "TESLA", "TESLA", "INNE MARKI"))
+
+rozkład_klas <- dane_klasyfikacja %>%
+  count(klasa) %>%
+  mutate(proporcja = n / sum(n) * 100)
+
+rozkład_klas
+```
+
+Po filtracji, proporcje klas pozostały stabilne i bliskie równowagi (Tesla: 53.17% , Inne marki: 46.83%), co eliminuje konieczność stosowania technik balansowania klas.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+dane_drzewo <- dane_bev1 %>% 
+  filter(zasieg_elektr_mile > 50) %>%
+  mutate(
+    jest_tesla = if_else(toupper(marka) == "TESLA", "TESLA", "INNE MARKI"),
+    jest_tesla = factor(jest_tesla, levels = c("INNE MARKI", "TESLA")) 
+  ) %>%
+  dplyr::select(jest_tesla, zasieg = zasieg_elektr_mile, rok = rok_modelowy) %>%
+  na.omit() 
+
+set.seed(123) 
+indeksy <- sample(nrow(dane_drzewo), size = 0.7 * nrow(dane_drzewo))
+dane_treningowe <- dane_drzewo[indeksy, ]
+dane_testowe <- dane_drzewo[-indeksy, ]
+
+model_drzewa <- rpart(
+  jest_tesla ~ zasieg + rok, 
+  data = dane_treningowe,
+  method = "class",
+  control = rpart.control(cp = 0.0001) 
+)
+
+optymalny_cp <- model_drzewa$cptable[which.min(model_drzewa$cptable[,"xerror"]), "CP"]
+drzewo_przyciete <- prune(model_drzewa, cp = optymalny_cp)
+
+rpart.plot(drzewo_przyciete, type = 3, extra = 101, box.palette = "GnRd",
+           fallen.leaves = TRUE, main = "Drzewo klasyfikujące Tesla vs Reszta")
+```
+
+**Interpretacja Drzewa:**
+
+Drzewo decyzyjne identyfikuje zasięg jako najważniejszy czynnik rozdzielający Teslę od pozostałych marek. Pierwszy, najsilniejszy podział występuje przy zasięgu 196 pojazdy poniżej tej granicy są w przeważającej większości klasyfikowane jako „INNE MARKI”, co sugeruje, że Tesla ma przewage technologiczna w zakresie baterii od konkurencji.
+
+Warto zwrócić też uwagę na aspekt czasowy, reprezentowany przez zmienna rok. Jej rola jest dynamiczna i ma kluczowe znaczenie w kontekście ewolucji rynku CEV. W gałęziach drzewa, w których zasięg jest wysoki starsze pojazdy są częściej klasfikowane jako Tesla - potwierdza to przewage historyczna Tesli.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+cat("\n OCENA MODELU DRZEWA DECYZYJNEGO \n")
+
+predykcje_drzewa <- predict(drzewo_przyciete, dane_testowe, type = "class")
+conf_mat_tree <- confusionMatrix(predykcje_drzewa, dane_testowe$jest_tesla, positive = "TESLA")
+print(conf_mat_tree)
+
+cat("\nDokładność (Accuracy):", conf_mat_tree$overall["Accuracy"], "\n")
+cat("Czułość (Sensitivity):", conf_mat_tree$byClass["Sensitivity"], "\n")
+cat("Swoistość (Specificity):", conf_mat_tree$byClass["Specificity"], "\n")
+cat("\n RANDOM FOREST: Ocena Ważności Zmiennych \n")
+
+rf_model <- randomForest(as.factor(jest_tesla) ~ zasieg  + rok, 
+                         data = dane_treningowe, 
+                         ntree = 500, 
+                         importance = TRUE)
+
+print(rf_model)
+varImpPlot(rf_model, main = "Ważność Zmiennych (Random Forest)")
+```
+
+Drzewo decyzyjne i las losowy wskazują, że już na podstawie dwóch zmiennych - deklarowanego zasięgu i roku modelowego **-** można bardzo dobrze rozróżnić pojazdy marki Tesla od pozostałych marek w badanej próbie. Model drzewa osiągnął Accuracy ok. **98.5%**, z **czułością 100%** (wszystkie Tesle poprawnie wykryte) i specyficznością ok. **96.9%** (około 3% nie-Tesli sklasyfikowano fałszywie jako Tesla).
+
+Wyniki random forest (OOB error ok. 1.37%) potwierdzają, że zasięg jest głównym czynnikiem rozdzielającym, zaś rok pełni rolę pomocniczą - auta o większym zasięgu i nowszych rocznikach mają znacznie wyższe prawdopodobieństwo bycia Teslą w analizowanej próbce. Analiza przypadków błędnie sklasyfikowanych (false positives) pokazuje, że niektóre nie-Tesle z wysokim zasięgiem (i/lub nowszym rocznikiem) wyglądają podobnie do Tesli, co tłumaczy większość błędów klasyfikacji.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pred_prob <- predict(drzewo_przyciete, dane_testowe, type = "prob")[, 2] 
+roc_obj <- roc(dane_testowe$jest_tesla, pred_prob)
+cat("\nOcena Modelu ROC/AUC\n")
+print(roc_obj)
+plot(roc_obj, main = "Krzywa ROC dla Klasyfikacji TESLA vs. INNE MARKI",
+     col = "red", lwd = 3, print.auc = TRUE)
+```
+
+Analiza krzywej ROC i pola powierzchni pod nią (AUC) dostarcza niezależnej, globalnej oceny zdolności modelu do rozróżniania klas. Osiągnięta wartość AUC = 0.9989 jest niemal perfekcyjna i silnie potwierdza wyniki uzyskane w Macierzy Konfuzji. Oznacza to, że zmienne zasięg i rok są wyjątkowo skutecznymi predyktorami do zdefiniowania segmentu Tesli, dowodząc tym samym jej rynkowej odrębności.
+
+**Podsumowanie**
+
+Modelowanie klasyfikacyjne jednoznacznie potwierdza, że dominacja rynkowa Tesli wynika z połączenia przewagi technologicznej (wysoki zasięg) oraz efektu wczesnego wejścia na rynek (rok produkcji). Czynniki te tworzą segment, do którego konkurenci mają ograniczony dostęp. Wyniki drzewa decyzyjnego wskazują, że kluczowym warunkiem skutecznego konkurowania z Teslą jest przekroczenie bariery zasięgu na poziomie około 200 mil - dopiero po osiągnięciu tego progu pojazdy innych marek zaczynają wchodzić w przestrzeń zbliżoną do segmentu definiowanego przez lidera rynku.
+
+## Podsumowanie - projektu
+
+Celem projektu była wieloaspektowa analiza rynku pojazdów elektrycznych w stanie Waszyngton, obejmująca zarówno zmianę struktury rynku w czasie, jak i identyfikację czynników technologiczno-rynkowych wpływających na konkurencyjność poszczególnych producentów. Przeprowadzona analiza łączy podejście opisowe, statystyczne i modelowe, dostarczając pełny obraz dynamiki sektora oraz uwarunkowań stojących za zmianami.
+
+Wyniki projektu wskazują, że rynek pojazdów elektrycznych w stanie Waszyngton dojrzewa i wyraźnie przechyla się w kierunku pełnej elektryfikacji (BEV). Tesla natomiast utrzymuje swoją pozycję lidera.
+
+Projekt stanowi kompleksowe spojrzenie na rynek EV, łącząc analizę trendów, modelowanie statystyczne i techniki uczenia maszynowego. Wyniki te mogą służyć jako podstawa do dalszej pracy analitycznej, porównań między stanami lub prognozowania przyszłych kierunków rozwoju rynku pojazdów elektrycznych.

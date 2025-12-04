@@ -1,0 +1,32 @@
+#sticky-logo {
+  position: fixed;
+  top: 90px;
+  left: 20px;
+  width: 320px;
+  z-index: 9999;
+  text-align: center;
+}
+
+#sticky-logo img {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+#sticky-logo .sublogo {
+  margin-top: 12px;
+}
+
+.logo-caption {
+  font-size: 12px;
+  color: #444;
+  margin-top: 6px;
+  line-height: 1.2;
+  font-style: italic;
+  text-align: center;
+}
+
+body { margin-left: 220px; }
+@media (max-width: 992px){ #sticky-logo{display:none;} body{margin-left:0;} }
