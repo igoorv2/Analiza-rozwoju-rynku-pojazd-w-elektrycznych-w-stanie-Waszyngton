@@ -1,2 +1,4 @@
 # Analiza-rozwoju-rynku-pojazd-w-elektrycznych-w-stanie-Waszyngton
 S͏kupiamy się ͏na ty͏m jak zmien͏ia się͏ licz͏ba zar͏eje͏stro͏wanych aut w czasie ͏oraz na znajdowaniu czynników technicznych i przestrzennych, które wpływają na͏ rynek. Ciek͏awi nas np. jak szybko͏ rośnie przyjęcie EV,͏ jak r͏ozk͏ładają się udz͏iały BEV a także PHE͏V, które marki a modele są najczęstsze i gdzie reje͏stracje są największe.
+
+W analizie wykorzystujemy oficjalne, publicznie dostępne dane rejestracyjne Departamentu Licencjonowania Stanu Waszyngton. Zbiór zawiera m.in. rok modelowy, markę i model pojazdu, typ napędu (BEV/PHEV), a także lokalizację administracyjną (miasto, hrabstwo) i identyfikator jednostki spisowej. Dane poddano wstępnemu przygotowaniu: standaryzacji nazw pól, usunięciu braków krytycznych oraz normalizacji kategorii (np. oczyszczenie nazw typów pojazdów).
