@@ -1,1 +1,1 @@
-git commit -m "Configure Linguist to classify .qmd files as R"
+*.qmd linguist-language=R
